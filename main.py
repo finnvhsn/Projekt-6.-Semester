@@ -1,28 +1,66 @@
 import logging
-import argparse
+import os
+import requests
 from pprint import pprint
-
+from dotenv import load_dotenv
 from agent import build_agent
 from config import CONFIG
 
-# === CLI Setup ===
-parser = argparse.ArgumentParser(description="Frage einen RAG Agent.")
-parser.add_argument("question", type=str, help="Die Frage an den Wissensgraphen")
-parser.add_argument("--debug", action="store_true", help="Zeige Debug-Logs")
-args = parser.parse_args()
+# === Load .env ===
+load_dotenv()
+API_KEY = os.getenv("OPENAI_API_KEY")
+API_BASE = os.getenv("OPENAI_API_BASE")
 
 # === Logging Setup ===
 logging.basicConfig(
-    level=logging.DEBUG if args.debug else logging.INFO,
+    level=logging.INFO,
     format="%(levelname)s: %(message)s",
 )
 
-# === Agent Ausführung ===
-agent = build_agent()
-initial_state = {"question": args.question, "attempt": 1}
+# === Step 1: Fetch Available Models from IONOS ===
+def fetch_available_models():
+    headers = {"Authorization": f"Bearer {API_KEY}"}
+    try:
+        res = requests.get(f"{API_BASE}/models", headers=headers)
+        res.raise_for_status()
+        models = res.json().get("data", [])
+        return [m["id"] for m in models if "Instruct" in m["id"]]
+    except Exception as e:
+        print("❌ Fehler beim Laden der Modelle:", e)
+        return []
 
+# === Step 2: Select a Model ===
+def choose_model():
+    models = fetch_available_models()
+    if not models:
+        print("Keine Modelle verfügbar.")
+        exit(1)
 
-def invoke_with_retries(state):
+    print("\n🧠 Verfügbare Modelle:")
+    for idx, model_id in enumerate(models, 1):
+        print(f"{idx}. {model_id}")
+    try:
+        choice = int(input("\nWähle ein Modell (1–{}): ".format(len(models))))
+        return models[choice - 1]
+    except (ValueError, IndexError):
+        print("Ungültige Auswahl.")
+        exit(1)
+
+# === Step 3: Ask Questions in a Loop ===
+def chat_loop(agent):
+    while True:
+        question = input("\n💬 Deine Frage (oder 'exit'): ").strip()
+        if question.lower() in {"exit", "quit"}:
+            print("👋 Auf Wiedersehen!")
+            break
+
+        state = {"question": question, "attempt": 1}
+        result = invoke_with_retries(agent, state)
+        print("\n✅ Antwort:\n")
+        pprint(result.get("answer", "(keine Antwort)"))
+
+# === Step 4: Retry logic from original code ===
+def invoke_with_retries(agent, state):
     for i in range(CONFIG["max_retries"]):
         state["attempt"] = i + 1
         result = agent.invoke(state)
@@ -30,7 +68,10 @@ def invoke_with_retries(state):
             return result
     return result
 
-
-final_result = invoke_with_retries(initial_state)
-print("\nFinale Antwort:\n")
-pprint(final_result.get("answer", "(keine Antwort)"))
+# === MAIN ===
+if __name__ == "__main__":
+    selected_model = choose_model()
+    CONFIG["llm_model"] = selected_model  # override model dynamically
+    print(f"\n🔧 Modell '{selected_model}' wird verwendet.\n")
+    agent = build_agent()
+    chat_loop(agent)
