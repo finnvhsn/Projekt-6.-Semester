@@ -1,0 +1,13 @@
+python-dotenv
+langchain
+langchain-community
+langchain-experimental
+langgraph
+openai
+langchain-openai
+docling
+unstructured
+unstructured[md]
+eventlet
+python-socketio
+faiss-cpu

@@ -1,0 +1,5 @@
+.venv
+.idea
+appdata/*
+data/input/*
+data/result/markdown/*
